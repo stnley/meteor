@@ -1,6 +1,7 @@
 import abc
+import asyncio
 import warnings
-from typing import Any, Dict, Generic, Protocol, Set, Type, TypeVar, cast
+from typing import Any, Dict, Generic, Set, Type, TypeVar, cast
 
 from meteor.exceptions import UnknownRequestType
 
@@ -20,9 +21,13 @@ class IRequest(Generic[TResponse]):
     ...
 
 
-class _Handler(Protocol):
-    async def handle(self, request: Any) -> Any:
-        ...
+class Request(IRequest[Any]):
+    """Generic request class.
+
+    Subclass of IRequest which expects Any to be returned.
+    """
+
+    ...
 
 
 class IRequestHandler(abc.ABC, Generic[TRequest, TResponse]):
@@ -33,9 +38,18 @@ class IRequestHandler(abc.ABC, Generic[TRequest, TResponse]):
         ...
 
 
+class RequestHandler(IRequestHandler[Request, Any]):
+    """Generic request handler.
+
+    Subclass of IRequestHandler which allows any Request and returns Any.
+    """
+
+    ...
+
+
 class Mediator:
     def __init__(self) -> None:
-        self._handlers: Dict[Type[Any], Set[Type[_Handler]]] = {}
+        self._handlers: Dict[Type[Any], Set[Type[IRequestHandler[Any, Any]]]] = {}
 
     async def register(
         self,
@@ -49,7 +63,7 @@ class Mediator:
 
         Args:
             request_type: Any type.
-            request_handler: A type (or subclass) of IRequestHandler. Notice the
+            request_handler: A type of IRequestHandler. Notice the
                 request_type does not need to be a type of IRequest or subclass.
                 The IRequestHandler interface will report an error if attempting to
                 register a type that it does not handle. This type-checking is *not*
@@ -78,31 +92,32 @@ class Mediator:
         Raises:
             UnknownRequestType: There was no handler registered for the type of request.
         """
-        request_type = type(request)
-        try:
-            # feels bad man
-            return cast(
-                TResponse,
-                await next(iter(self._handlers[request_type]))().handle(request),
-            )
-        except KeyError as exc:
-            raise UnknownRequestType(request, request_type.__name__) from exc
+        match handlers := self._handlers.get(request_type := type(request)):
+            case set():
+                # feels bad man
+                return cast(TResponse, await next(iter(handlers))().handle(request))
+            # TODO why does this not cover?
+            case None:
+                raise UnknownRequestType(request, request_type.__name__)
 
-    async def publish(self, request: IRequest[None]) -> None:
+    async def publish(self, request: IRequest[Any]) -> None:
         """Asyncronously send a request to multiple handlers.
 
         Sends a request to all handlers matching the request type. If no handlers match
-        the request type, a warning is issued.
+        the request type, a warning is issued. Current strategy is to schedule all
+        coroutines at once with asyncio.gather(). This means that if any handler raises
+        an exception, that is propogated up, however the other handlers still execute in
+        the background.
 
         Args:
-            request: an instance of a IRequest[None] (or subclass).
+            request: an instance of a IRequest (or subclass).
         """
-        request_type = type(request)
-        try:
-            handlers = self._handlers[request_type]
-            for handler in handlers:
-                await handler().handle(request)
-        except KeyError:
-            warnings.warn(
-                "No handler defined for request type '{}'".format(request_type.__name__)
-            )
+        match handlers := self._handlers.get(request_type := type(request)):
+            case set():
+                await asyncio.gather(*(h().handle(request) for h in handlers))
+            case None:
+                warnings.warn(
+                    "No handler defined for request type '{}'".format(
+                        request_type.__name__
+                    )
+                )
