@@ -3,8 +3,7 @@ from typing import Any
 import pytest
 from _pytest.capture import CaptureFixture
 
-from meteor.exceptions import UnknownRequestType
-from meteor.mediator import IRequest, IRequestHandler, Mediator
+from meteor import IRequest, IRequestHandler, Mediator, UnknownRequestType
 
 
 async def test_unknown_request_raises() -> None:
