@@ -16,6 +16,7 @@ pytest = "^7.1.2"
 flake8 = "^4.0.1"
 flake8-bugbear = "^22.4.25"
 pytest-asyncio = "^0.18.3"
+pytest-cov = "^3.0.0"
 
 [build-system]
 requires = ["poetry-core>=1.0.0"]
@@ -44,3 +45,16 @@ plugins = []
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
+addopts = ["--cov"]
+
+[tool.coverage.run]
+source = ["meteor"]
+branch = true
+
+[tool.coverage.report]
+show_missing = true
+exclude_lines = [
+    "pragma: no cover",
+    "class .*\\bProtocol\\):",
+    "@(abc\\.)?abstractmethod",
+]
